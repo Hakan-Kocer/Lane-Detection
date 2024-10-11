@@ -1,97 +1,95 @@
-from cv2 import cv2
+import cv2
 import numpy as np
 from math import sqrt
 
-image=cv2.imread("test.jpg")
-h=image.shape[0]
-w=image.shape[1]
+# Load image and get dimensions
+image = cv2.imread("test.jpg")
+height, width = image.shape[:2]
 
-if w%2==1:
-    whalf=(w-1)/2
-else:
-    whalf=w/2
-if h%2==1:
-    hhalf=(h-1)/2
-else:
-    hhalf=h/2
-hhalf=int(hhalf)
-whalf=int(whalf)
+# Calculate half dimensions
+half_width = width // 2
+half_height = height // 2
 
-beyaz = []
-j=0
-for x in range(0,h):#siyah noktaları buldum
-    for y in range(0,w):
-        #renk=img[x,y]
-        a=image[x,y,0]
-        b=image[x,y,1]
-        c=image[x,y,2]
-        if a>200 and b>200 and c>200:
-            beyaz.append((x,y))
-            j=j+1
-imgyeni=np.zeros((h, w, 1), np.uint8)
-for i in range(j):#Okuma yaparken beyaz noktalara baktığı için beyazlatma yaptım
-    imgyeni[beyaz[i][0],beyaz[i][1]]=[255]
-w3=w*4/100
-kernel = np.ones((5,5),np.uint8)
-imgyeni=cv2.morphologyEx(imgyeni,cv2.MORPH_OPEN,kernel)
-imgright1=imgyeni[hhalf:h, whalf:w]
-imgleft1=imgyeni[hhalf:h, 0:whalf]
-cnt=0
-contours, npaHierarchy = cv2.findContours(imgright1, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-listofpossbileright=[]
+# Find white pixels
+white_pixels = []
+for x in range(height):
+    for y in range(width):
+        b, g, r = image[x, y]
+        if b > 200 and g > 200 and r > 200:
+            white_pixels.append((x, y))
+
+# Create a blank image and mark white pixels
+binary_img = np.zeros((height, width), np.uint8)
+for x, y in white_pixels:
+    binary_img[x, y] = 255
+
+# Define kernel and apply morphological operations
+kernel = np.ones((5, 5), np.uint8)
+binary_img = cv2.morphologyEx(binary_img, cv2.MORPH_OPEN, kernel)
+
+# Split image into left and right halves
+right_half = binary_img[half_height:, half_width:]
+left_half = binary_img[half_height:, :half_width]
+
+# Threshold for minimum width of bounding boxes
+min_width_threshold = width * 0.04
+
+# Find contours in the right half
+contours, _ = cv2.findContours(right_half, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+possible_right_lines = []
+shortest_distance = None
+lane_lines_right = None
+
 for contour in contours:
-    boundingRect = cv2.boundingRect(contour)
-    [intX, intY, intWidth, intHeight] = boundingRect
-    if intWidth>w3:
-        listofpossbileright.append(boundingRect)
-        sayi1=sqrt(((0-intX)**2)+((imgright1.shape[0]-intY)**2))#imgright1.shape[1]
-        if cnt==0:
-            sonucright=sayi1
-            lanelinesright=boundingRect
-            cnt=1
-        if cnt ==1 and sayi1<sonucright:
-            sonucright=sayi1
-            lanelinesright=boundingRect
-[intX1 ,intY1, intWidth1, intHeight1] = lanelinesright
-#cv2.circle (imgright1,(intX,intY),30,(255,255,255),-1)
-h11=imgright1.shape[0]
-oran=intHeight1/intWidth1
-deger1=h11-intY1
-weight1=deger1/oran
-cnt=0
-contours, npaHierarchy = cv2.findContours(imgleft1, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-listofpossbileleft=[]
+    x, y, w, h = cv2.boundingRect(contour)
+    if w > min_width_threshold:
+        possible_right_lines.append((x, y, w, h))
+        distance = sqrt((x - 0) ** 2 + (y - right_half.shape[0]) ** 2)
+        if shortest_distance is None or distance < shortest_distance:
+            shortest_distance = distance
+            lane_lines_right = (x, y, w, h)
+
+# Calculate the scaling factor for the right side
+if lane_lines_right:
+    x1, y1, w1, h1 = lane_lines_right
+    right_slope = h1 / w1
+    right_intercept = right_half.shape[0] - y1
+    right_weight = right_intercept / right_slope
+
+# Find contours in the left half
+contours, _ = cv2.findContours(left_half, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+possible_left_lines = []
+shortest_distance = None
+lane_lines_left = None
+
 for contour in contours:
-    boundingRect = cv2.boundingRect(contour)
-    [intX, intY, intWidth, intHeight] = boundingRect
-    if intWidth>w3:
-        listofpossbileleft.append(boundingRect)
-        sayi2=sqrt(((imgright1.shape[1]-intX)**2)+((imgright1.shape[0]-intY)**2))
-        if cnt==0:
-            sonucleft=sayi2
-            lanelinesleft=boundingRect
-            cnt=1
-        if cnt ==1 and sayi1<sonucleft:
-            sonucleft=sayi1
-            lanelinesleft=boundingRect
-[intX, intY, intWidth, intHeight] = lanelinesleft
-#cv2.circle (imgleft1,(intX,intY),30,(255,255,255),-1)
-h1=imgright1.shape[0]
-oran=intHeight/intWidth
-deger1=h1-intY
-weight=deger1/oran
-print(lanelinesleft)
-pts = np.array([[intX-int(weight),hhalf+int(h1)],[intX,hhalf+intY],[whalf+intX1,hhalf+intY1],[whalf+int(weight1)+intX,hhalf+int(h11)]], np.int32)
-pts = pts.reshape((-1,1,2))
-cv2.polylines(image,[pts],True,(140,130,17))
-font = cv2.FONT_HERSHEY_SIMPLEX
-#cv2.circle (imgleft1,(intX+intWidth,intY),30,(255,255,255),-1)
-#print(listofpossbileleft)
-#beyaz yerlerin arabaya yakınlığını bulmak için 2 nokta arasındaki uzaklıktan buluruz.
-#noktayı sol tarafta ise sağ alt köşe, sağ tarafta ise sol alt noktadan çıkarırız.
+    x, y, w, h = cv2.boundingRect(contour)
+    if w > min_width_threshold:
+        possible_left_lines.append((x, y, w, h))
+        distance = sqrt((left_half.shape[1] - x) ** 2 + (left_half.shape[0] - y) ** 2)
+        if shortest_distance is None or distance < shortest_distance:
+            shortest_distance = distance
+            lane_lines_left = (x, y, w, h)
 
-pts = np.array([[50,160],[125,160],[160,230],[10,230]], np.int32)
+# Calculate the scaling factor for the left side
+if lane_lines_left:
+    x2, y2, w2, h2 = lane_lines_left
+    left_slope = h2 / w2
+    left_intercept = left_half.shape[0] - y2
+    left_weight = left_intercept / left_slope
 
+    # Draw the lanes on the original image
+    points = np.array([
+        [x2 - int(left_weight), half_height + left_half.shape[0]],
+        [x2, half_height + y2],
+        [half_width + x1, half_height + y1],
+        [half_width + int(right_weight) + x1, half_height + right_half.shape[0]]
+    ], np.int32)
 
-cv2.imshow("resim",image)
-cv2.waitKey()
+    points = points.reshape((-1, 1, 2))
+    cv2.polylines(image, [points], True, (140, 130, 17), thickness=3)
+
+# Display the result
+cv2.imshow("Result", image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
